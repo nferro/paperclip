@@ -2,7 +2,7 @@
 
 Tracks `paperclipai/paperclip:master` plus a small patch:
 
-- Dockerfile bakes in `chromium` + `chromium-sandbox` + `@earendil-works/pi-coding-agent@latest`
+- Dockerfile bakes in `chromium` + `chromium-sandbox` + `@earendil-works/pi-coding-agent@latest` + `rtk` (latest rtk-ai/rtk release)
   on top of upstream's production image (alongside the claude-code / codex /
   opencode CLIs upstream already installs).
 - Adds `CHROME_BIN` / `PUPPETEER_EXECUTABLE_PATH` env so headless-browser
