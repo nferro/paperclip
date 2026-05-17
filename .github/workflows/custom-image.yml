@@ -163,7 +163,7 @@ jobs:
             echo
             echo "- upstream: \`${upstream_sha}\` (paperclipai/paperclip@master)"
             echo "- image: \`ghcr.io/${{ github.repository }}:${tag}\`"
-            echo "- includes: chromium, @earendil-works/pi-coding-agent@latest, @anthropic-ai/claude-code@latest, @openai/codex@latest, opencode-ai"
+            echo "- includes: chromium, @earendil-works/pi-coding-agent@latest, rtk (rtk-ai/rtk latest), @anthropic-ai/claude-code@latest, @openai/codex@latest, opencode-ai"
             echo
             if [ -n "$prev" ]; then
               prev_upstream="$(gh release view "$prev" --repo ${{ github.repository }} --json body --jq '.body' | grep -oE 'upstream: \`[0-9a-f]+\`' | head -1 | grep -oE '[0-9a-f]+' || true)"

@@ -72,6 +72,19 @@ RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/cod
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 
+# rtk-ai/rtk: token-optimised CLI proxy. Pulls latest GitHub release and
+# verifies via the release-published checksums.txt.
+RUN set -eux; \
+  cd /tmp; \
+  asset=rtk-x86_64-unknown-linux-musl.tar.gz; \
+  curl -fsSLO "https://github.com/rtk-ai/rtk/releases/latest/download/${asset}"; \
+  curl -fsSLO "https://github.com/rtk-ai/rtk/releases/latest/download/checksums.txt"; \
+  grep " ${asset}$" checksums.txt | sha256sum -c -; \
+  tar -xzf "${asset}"; \
+  install -m 0755 rtk /usr/local/bin/rtk; \
+  rm -rf "${asset}" checksums.txt rtk; \
+  /usr/local/bin/rtk --version
+
 COPY scripts/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
