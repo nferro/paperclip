@@ -54,9 +54,9 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai @paperclipai/pi@latest \
   && apt-get update \
-  && apt-get install -y --no-install-recommends openssh-client jq \
+  && apt-get install -y --no-install-recommends openssh-client jq chromium chromium-sandbox fonts-liberation \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
@@ -76,7 +76,11 @@ ENV NODE_ENV=production \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
   PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
-  OPENCODE_ALLOW_ALL_MODELS=true
+  OPENCODE_ALLOW_ALL_MODELS=true \
+  CHROME_BIN=/usr/bin/chromium \
+  PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true
 
 VOLUME ["/paperclip"]
 EXPOSE 3100

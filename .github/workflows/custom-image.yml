@@ -1,0 +1,252 @@
+name: custom-image
+
+# Tracks upstream paperclipai/paperclip:master, rebases our Dockerfile patch
+# on top, builds a chromium+pi-enabled image, and publishes it under a
+# date-based tag. Runs daily plus on every push to `custom`.
+
+on:
+  schedule:
+    - cron: "30 5 * * *"
+  push:
+    branches:
+      - custom
+    paths-ignore:
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: Build even if upstream has no new commits.
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: custom-image
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      built: ${{ steps.decide.outputs.built }}
+      tag: ${{ steps.tag.outputs.tag }}
+      previous_tag: ${{ steps.tag.outputs.previous_tag }}
+      upstream_sha: ${{ steps.sync.outputs.upstream_sha }}
+      upstream_short: ${{ steps.sync.outputs.upstream_short }}
+      release_url: ${{ steps.release.outputs.html_url }}
+    steps:
+      - name: Checkout custom branch
+        uses: actions/checkout@v4
+        with:
+          ref: custom
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream + rebase onto upstream/master
+        id: sync
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/paperclipai/paperclip.git || true
+          git fetch upstream master --no-tags
+          upstream_sha="$(git rev-parse upstream/master)"
+          echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+          echo "upstream_short=${upstream_sha:0:7}" >> "$GITHUB_OUTPUT"
+
+          # Find the custom patch commits (those not in upstream/master)
+          custom_commits="$(git log --reverse --format=%H upstream/master..HEAD)"
+          if [ -z "$custom_commits" ]; then
+            echo "No custom commits ahead of upstream — this branch should at least carry the Dockerfile patch + this workflow."
+            echo "Resetting to upstream/master."
+            git reset --hard upstream/master
+          else
+            echo "Custom commits to replay onto upstream/master:"
+            echo "$custom_commits"
+            git rebase upstream/master
+          fi
+
+      - name: Push synced custom branch
+        id: push
+        run: |
+          set -euo pipefail
+          before_push="$(git rev-parse HEAD)"
+          # Use force-with-lease to avoid clobbering concurrent pushes
+          git push --force-with-lease origin custom
+          echo "head=${before_push}" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to build
+        id: decide
+        run: |
+          set -euo pipefail
+          force="${{ github.event.inputs.force_build }}"
+          event="${{ github.event_name }}"
+          last_built_sha="$(gh api repos/${{ github.repository }}/releases --jq '[.[] | select(.tag_name | startswith("custom-"))][0].body' 2>/dev/null | grep -oE 'upstream: \`[0-9a-f]+\`' | head -1 | grep -oE '[0-9a-f]+' || true)"
+          current="${{ steps.sync.outputs.upstream_sha }}"
+          echo "Last built upstream SHA: ${last_built_sha:-<none>}"
+          echo "Current upstream SHA:    ${current}"
+          if [ "$force" = "true" ] || [ "$event" = "push" ] || [ "$event" = "workflow_dispatch" ] || [ -z "$last_built_sha" ] || [ "$last_built_sha" != "${current:0:${#last_built_sha}}" ]; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Upstream unchanged since last build — skipping."
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tag
+        id: tag
+        if: steps.decide.outputs.built == 'true'
+        run: |
+          set -euo pipefail
+          date_part="$(date -u +%Y.%m.%d)"
+          short="${{ steps.sync.outputs.upstream_short }}"
+          base="custom-${date_part}-${short}"
+          # If a tag with this exact name already exists, append -N
+          tag="$base"
+          n=1
+          while gh release view "$tag" --repo ${{ github.repository }} >/dev/null 2>&1; do
+            tag="${base}-${n}"
+            n=$((n+1))
+          done
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+          previous="$(gh release list --repo ${{ github.repository }} --limit 50 --json tagName --jq '[.[] | select(.tagName | startswith("custom-"))][0].tagName' || true)"
+          echo "previous_tag=${previous}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to GHCR
+        if: steps.decide.outputs.built == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.decide.outputs.built == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        if: steps.decide.outputs.built == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          cache-from: type=gha,scope=custom
+          cache-to: type=gha,mode=max,scope=custom
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.tag }}
+            ghcr.io/${{ github.repository }}:custom
+
+      - name: Generate release notes
+        if: steps.decide.outputs.built == 'true'
+        id: notes
+        run: |
+          set -euo pipefail
+          prev="${{ steps.tag.outputs.previous_tag }}"
+          tag="${{ steps.tag.outputs.tag }}"
+          upstream_sha="${{ steps.sync.outputs.upstream_sha }}"
+
+          {
+            echo "Custom image build."
+            echo
+            echo "- upstream: \`${upstream_sha}\` (paperclipai/paperclip@master)"
+            echo "- image: \`ghcr.io/${{ github.repository }}:${tag}\`"
+            echo "- includes: chromium, @paperclipai/pi@latest, @anthropic-ai/claude-code@latest, @openai/codex@latest, opencode-ai"
+            echo
+            if [ -n "$prev" ]; then
+              prev_upstream="$(gh release view "$prev" --repo ${{ github.repository }} --json body --jq '.body' | grep -oE 'upstream: \`[0-9a-f]+\`' | head -1 | grep -oE '[0-9a-f]+' || true)"
+              if [ -n "$prev_upstream" ] && [ "$prev_upstream" != "$upstream_sha" ]; then
+                echo "## Upstream commits since previous build (\`$prev\`)"
+                echo
+                git log --no-merges --format='- %s (%h)' "${prev_upstream}..${upstream_sha}" || echo "(unable to compute log)"
+              else
+                echo "## Upstream commits since previous build"
+                echo
+                echo "No upstream changes since \`$prev\` — rebuilt due to manual trigger or patch change."
+              fi
+            else
+              echo "First custom build."
+            fi
+          } > release-notes.md
+          cat release-notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.decide.outputs.built == 'true'
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          url="$(gh release create "$tag" \
+            --repo ${{ github.repository }} \
+            --target custom \
+            --title "$tag" \
+            --notes-file release-notes.md)"
+          echo "html_url=${url}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump ArgoCD image tag
+        if: steps.decide.outputs.built == 'true' && env.ARGOCD_REPO_TOKEN != ''
+        env:
+          ARGOCD_REPO_TOKEN: ${{ secrets.ARGOCD_REPO_TOKEN }}
+          NEW_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          git clone "https://x-access-token:${ARGOCD_REPO_TOKEN}@github.com/dotpt-private/argocd.git" "$tmp"
+          cd "$tmp"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          file="applications/paperclip.yaml"
+          python3 - "$file" "ghcr.io/${{ github.repository }}" "$NEW_TAG" <<'PY'
+          import re, sys, pathlib
+          path = pathlib.Path(sys.argv[1])
+          repo = sys.argv[2]
+          tag  = sys.argv[3]
+          text = path.read_text()
+
+          def upsert_param(text, name, value):
+              # Look for an existing parameter with this name
+              pattern = re.compile(
+                  r"(- name:\s*" + re.escape(name) + r"\s*\n\s*value:\s*).*",
+                  re.MULTILINE,
+              )
+              if pattern.search(text):
+                  return pattern.sub(rf"\g<1>{value}", text)
+              # Insert before the values: | block or at end of parameters list
+              insert = f"        - name: {name}\n          value: {value}\n"
+              # Find "parameters:" section and append
+              params_pat = re.compile(r"(parameters:\s*\n(?:(?:\s{8}-.*\n(?:\s{10,}.*\n)*))+)")
+              m = params_pat.search(text)
+              if not m:
+                  raise SystemExit("parameters: block not found in " + str(path))
+              end = m.end()
+              return text[:end] + insert + text[end:]
+
+          text = upsert_param(text, "image.repository", repo)
+          text = upsert_param(text, "image.tag",        tag)
+          path.write_text(text)
+          PY
+
+          if git diff --quiet; then
+            echo "ArgoCD app already on $NEW_TAG"
+            exit 0
+          fi
+          git add "$file"
+          git commit -m "paperclip: bump custom image to ${NEW_TAG}"
+          git push origin HEAD
