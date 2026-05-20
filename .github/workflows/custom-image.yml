@@ -89,7 +89,7 @@ jobs:
           set -euo pipefail
           force="${{ github.event.inputs.force_build }}"
           event="${{ github.event_name }}"
-          last_built_sha="$(gh api repos/${{ github.repository }}/releases --jq '[.[] | select(.tag_name | startswith("custom-"))][0].body' 2>/dev/null | grep -oE 'upstream: \`[0-9a-f]+\`' | head -1 | grep -oE '[0-9a-f]+' || true)"
+          last_built_sha="$(gh api repos/${{ github.repository }}/releases --jq '[.[] | select(.tag_name | startswith("custom-"))][0].body' 2>/dev/null | grep -oE '[0-9a-f]{40}' | head -1 || true)"
           current="${{ steps.sync.outputs.upstream_sha }}"
           echo "Last built upstream SHA: ${last_built_sha:-<none>}"
           echo "Current upstream SHA:    ${current}"
@@ -166,7 +166,7 @@ jobs:
             echo "- includes: chromium, @earendil-works/pi-coding-agent@latest, rtk (rtk-ai/rtk latest), @anthropic-ai/claude-code@latest, @openai/codex@latest, opencode-ai"
             echo
             if [ -n "$prev" ]; then
-              prev_upstream="$(gh release view "$prev" --repo ${{ github.repository }} --json body --jq '.body' | grep -oE 'upstream: \`[0-9a-f]+\`' | head -1 | grep -oE '[0-9a-f]+' || true)"
+              prev_upstream="$(gh release view "$prev" --repo ${{ github.repository }} --json body --jq '.body' | grep -oE '[0-9a-f]{40}' | head -1 || true)"
               if [ -n "$prev_upstream" ] && [ "$prev_upstream" != "$upstream_sha" ]; then
                 echo "## Upstream commits since previous build (\`$prev\`)"
                 echo
