@@ -45,7 +45,11 @@ jobs:
         with:
           ref: custom
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # SYNC_PAT: fine-grained PAT (Contents R/W + Workflows R/W) so CI can
+          # push rebases that touch workflow files. Falls back to GITHUB_TOKEN
+          # (harmless) when the secret is absent, but that token cannot push
+          # workflow-file changes.
+          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Configure git identity
         run: |
