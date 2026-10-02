@@ -98,6 +98,8 @@ pod:
     runAsUser: 1000
     runAsGroup: 1000
     runAsNonRoot: true
+  # -- Lifecycle hooks for the main container, rendered verbatim (e.g. a `postStart` exec that patches the image filesystem on every start). A failing `postStart` kills the container, so make hook commands exit 0.
+  lifecycle: {}
   # -- Extra annotations on the pod template.
   annotations: {}
   # -- Extra labels on the pod template.

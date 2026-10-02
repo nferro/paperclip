@@ -95,3 +95,19 @@ tests:
           content:
             name: PAPERCLIP_BASE_PATH
             value: "/paperclip$(touch /pwned2)"
+
+  - it: omits lifecycle hooks by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].lifecycle
+
+  - it: renders lifecycle hooks on the main container
+    set:
+      pod.lifecycle:
+        postStart:
+          exec:
+            command: ["sh", "-c", "true"]
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].lifecycle.postStart.exec.command
+          value: ["sh", "-c", "true"]

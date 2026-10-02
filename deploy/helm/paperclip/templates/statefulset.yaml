@@ -88,6 +88,10 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.pod.containerSecurityContext | nindent 12 }}
+          {{- with .Values.pod.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           workingDir: /app
           command: ["node"]
           args:

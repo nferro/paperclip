@@ -162,10 +162,11 @@ kubectl -n paperclip exec paperclip-0 -- \
 | secret | object | `{"agentJwtSecret":"","existingSecret":"","masterKey":""}` | Secret containing `agentJwtSecret` and optional `masterKey` seed. |
 | secret.agentJwtSecret | string | `""` | JWT secret for the Paperclip agent. Only used when `existingSecret` is empty — avoid under GitOps (non-deterministic render). |
 | secret.masterKey | string | `""` | Base64-encoded master key to seed `/paperclip/instances/<instanceId>/secrets/master.key` on first boot. Ignored if the file already exists on the PVC. Only used when `existingSecret` is empty. Leave empty to let Paperclip generate its own on first run. |
-| pod | object | `{"annotations":{},"containerSecurityContext":{"runAsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"labels":{},"securityContext":{"fsGroup":1000,"fsGroupChangePolicy":"OnRootMismatch"},"shareProcessNamespace":true}` | Pod spec knobs. |
+| pod | object | `{"annotations":{},"containerSecurityContext":{"runAsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"labels":{},"lifecycle":{},"securityContext":{"fsGroup":1000,"fsGroupChangePolicy":"OnRootMismatch"},"shareProcessNamespace":true}` | Pod spec knobs. |
 | pod.shareProcessNamespace | bool | `true` | Share the process namespace so tini (pid 1) reaps orphaned child processes spawned by Claude agents. |
 | pod.securityContext | object | `{fsGroup: 1000, fsGroupChangePolicy: OnRootMismatch}`. | Pod-level security context. |
 | pod.containerSecurityContext | object | `{runAsUser: 1000, runAsGroup: 1000, runAsNonRoot: true}`. | Container-level security context. |
+| pod.lifecycle | object | `{}` | Lifecycle hooks for the main container, rendered verbatim (e.g. a `postStart` exec that patches the image filesystem on every start). A failing `postStart` kills the container, so make hook commands exit 0. |
 | pod.annotations | object | `{}` | Extra annotations on the pod template. |
 | pod.labels | object | `{}` | Extra labels on the pod template. |
 | resources | object | requests `500m/1Gi`, limits `2/4Gi`. | Container resource requests/limits. |
